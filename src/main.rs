@@ -1,6 +1,7 @@
 use structopt::StructOpt;
 use std::path::PathBuf;
 use std::fs;
+use std::collections::LinkedList;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -19,6 +20,32 @@ struct Opt {
     doc_comment_identifier: String,
 }
 
+#[derive(Debug)]
+enum Source {
+    Code(String),
+    Doc(String),
+}
+
+fn to_source_elements(source_text: String) -> LinkedList<Source> {
+    let doc_prefix = "##";
+    let mut source_lines: LinkedList<Source> = LinkedList::new();
+
+    for source_line in source_text.lines() {
+       if source_line.trim().starts_with(doc_prefix) {
+           source_lines.push_back(
+               Source::Doc(
+                   source_line.trim_start_matches(doc_prefix).trim().to_string()
+               )
+           );
+       } else {
+           source_lines.push_back(Source::Code(source_line.to_string()));
+       }
+    }
+
+    // TODO Lines with same type should be meld to single elements...
+    source_lines
+}
+
 fn main() {
     let opt = Opt::from_args();
     println!("Hello, world! Opts: {:?}", opt);
@@ -28,9 +55,16 @@ fn main() {
 
     println!("I've got a file: \"\"\"\n{content}\"\"\"");
 
+    println!("\"Parsed\" source lines: {:?}", to_source_elements(content));
+
     println!(
         "Documentation comment indentifier: \"{0}\"",
         opt.doc_comment_identifier
     );
+
+    println!("Source: {:?}", Source::Code("fn x() = || y;".to_string()));
+    println!("Source: {:?}", Source::Doc("@param x".to_string()));
+    println!("To-Source-Elements: {:?}", to_source_elements("".to_string()));
+
 
 }
