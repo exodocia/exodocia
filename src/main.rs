@@ -20,10 +20,16 @@ struct Opt {
     doc_comment_identifier: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Source {
     Code(String),
     Doc(String),
+}
+
+#[derive(Debug, PartialEq)]
+enum SourceType {
+    Code,
+    Doc,
 }
 
 fn to_source_elements(source_text: String) -> LinkedList<Source> {
@@ -42,8 +48,54 @@ fn to_source_elements(source_text: String) -> LinkedList<Source> {
        }
     }
 
-    // TODO Lines with same type should be meld to single elements...
     source_lines
+}
+
+fn meld_neighbors(source_lines: LinkedList<Source>) -> LinkedList<Source> {
+
+    let mut part: String = "".to_owned();
+    let mut documentation: LinkedList<Source> = LinkedList::new();
+
+    let mut last_part_type = match source_lines.front() {
+        Some(Source::Code(_)) => SourceType::Code,
+        Some(Source::Doc(_)) => SourceType::Doc,
+        _ => return documentation,
+    };
+
+    for line in source_lines.iter() {
+        match line {
+            Source::Code(line_str) => {
+                if SourceType::Code == last_part_type {
+                    part.push_str(line_str);
+                    part.push_str("\n");
+                } else {
+                    documentation.push_back(Source::Doc(part));
+
+                    part = line_str.to_owned();
+                    part.push_str("\n");
+                    last_part_type = SourceType::Code;
+                }
+            },
+            Source::Doc(line_str) =>  {
+                if SourceType::Doc == last_part_type {
+                    part.push_str(line_str);
+                    part.push_str("\n");
+                } else {
+                    documentation.push_back(Source::Code(part));
+
+                    part = line_str.to_owned();
+                    part.push_str("\n");
+                    last_part_type = SourceType::Doc;
+                }
+            },
+        }
+    }
+    match last_part_type {
+        SourceType::Code => documentation.push_back(Source::Code(part)),
+        SourceType::Doc => documentation.push_back(Source::Doc(part)),
+    }
+
+    documentation
 }
 
 fn main() {
@@ -55,7 +107,11 @@ fn main() {
 
     println!("I've got a file: \"\"\"\n{content}\"\"\"");
 
-    println!("\"Parsed\" source lines: {:?}", to_source_elements(content));
+    let lines_of_source = to_source_elements(content);
+    println!("\"Parsed\" source lines: {:?}\n", lines_of_source);
+    let parts_of_source = meld_neighbors(lines_of_source);
+    println!("\"Meld\" source parts: {:?}\n", parts_of_source);
+
 
     println!(
         "Documentation comment indentifier: \"{0}\"",
