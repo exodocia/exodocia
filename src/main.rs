@@ -66,25 +66,27 @@ fn meld_neighbors(source_lines: LinkedList<Source>) -> LinkedList<Source> {
         match line {
             Source::Code(line_str) => {
                 if SourceType::Code == last_part_type {
+                    if !part.is_empty() {
+                        part.push_str("\n");
+                    }
                     part.push_str(line_str);
-                    part.push_str("\n");
                 } else {
                     documentation.push_back(Source::Doc(part));
 
                     part = line_str.to_owned();
-                    part.push_str("\n");
                     last_part_type = SourceType::Code;
                 }
             }
             Source::Doc(line_str) => {
                 if SourceType::Doc == last_part_type {
+                    if !part.is_empty() {
+                        part.push_str("\n");
+                    }
                     part.push_str(line_str);
-                    part.push_str("\n");
                 } else {
                     documentation.push_back(Source::Code(part));
 
                     part = line_str.to_owned();
-                    part.push_str("\n");
                     last_part_type = SourceType::Doc;
                 }
             }
