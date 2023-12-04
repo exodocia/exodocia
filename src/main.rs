@@ -1,7 +1,7 @@
-use structopt::StructOpt;
-use std::path::PathBuf;
-use std::fs;
 use std::collections::LinkedList;
+use std::fs;
+use std::path::PathBuf;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -37,22 +37,22 @@ fn to_source_elements(source_text: String) -> LinkedList<Source> {
     let mut source_lines: LinkedList<Source> = LinkedList::new();
 
     for source_line in source_text.lines() {
-       if source_line.trim().starts_with(doc_prefix) {
-           source_lines.push_back(
-               Source::Doc(
-                   source_line.trim_start_matches(doc_prefix).trim().to_string()
-               )
-           );
-       } else {
-           source_lines.push_back(Source::Code(source_line.to_string()));
-       }
+        if source_line.trim().starts_with(doc_prefix) {
+            source_lines.push_back(Source::Doc(
+                source_line
+                    .trim_start_matches(doc_prefix)
+                    .trim()
+                    .to_string(),
+            ));
+        } else {
+            source_lines.push_back(Source::Code(source_line.to_string()));
+        }
     }
 
     source_lines
 }
 
 fn meld_neighbors(source_lines: LinkedList<Source>) -> LinkedList<Source> {
-
     let mut part: String = "".to_owned();
     let mut documentation: LinkedList<Source> = LinkedList::new();
 
@@ -75,8 +75,8 @@ fn meld_neighbors(source_lines: LinkedList<Source>) -> LinkedList<Source> {
                     part.push_str("\n");
                     last_part_type = SourceType::Code;
                 }
-            },
-            Source::Doc(line_str) =>  {
+            }
+            Source::Doc(line_str) => {
                 if SourceType::Doc == last_part_type {
                     part.push_str(line_str);
                     part.push_str("\n");
@@ -87,7 +87,7 @@ fn meld_neighbors(source_lines: LinkedList<Source>) -> LinkedList<Source> {
                     part.push_str("\n");
                     last_part_type = SourceType::Doc;
                 }
-            },
+            }
         }
     }
     match last_part_type {
@@ -102,8 +102,7 @@ fn main() {
     let opt = Opt::from_args();
     println!("Hello, world! Opts: {:?}", opt);
     println!("File name: {}", opt.input.display());
-    let content = fs::read_to_string(opt.input)
-        .expect("Cannot load source file");
+    let content = fs::read_to_string(opt.input).expect("Cannot load source file");
 
     println!("I've got a file: \"\"\"\n{content}\"\"\"");
 
@@ -112,7 +111,6 @@ fn main() {
     let parts_of_source = meld_neighbors(lines_of_source);
     println!("\"Meld\" source parts: {:?}\n", parts_of_source);
 
-
     println!(
         "Documentation comment indentifier: \"{0}\"",
         opt.doc_comment_identifier
@@ -120,7 +118,8 @@ fn main() {
 
     println!("Source: {:?}", Source::Code("fn x() = || y;".to_string()));
     println!("Source: {:?}", Source::Doc("@param x".to_string()));
-    println!("To-Source-Elements: {:?}", to_source_elements("".to_string()));
-
-
+    println!(
+        "To-Source-Elements: {:?}",
+        to_source_elements("".to_string())
+    );
 }
