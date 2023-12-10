@@ -1,3 +1,6 @@
+use combine::error::StringStreamError;
+use combine::parser::char::{letter, space};
+use combine::{any, many1, skip_count, token, Parser};
 use std::collections::LinkedList;
 use std::fs;
 use std::path::PathBuf;
@@ -9,9 +12,9 @@ use structopt::StructOpt;
     about = "Simple documentation extraction tool.",
     rename_all = "kebab-case"
 )]
+
 /// Simple tool for extracting documentation from _any_ source.
 /// Specifically shell scripts et consortes.
-///
 struct Opt {
     #[structopt(name = "SOURCE_FILE", parse(from_os_str))]
     input: PathBuf,
@@ -20,84 +23,127 @@ struct Opt {
     doc_comment_identifier: String,
 }
 
-#[derive(Debug, PartialEq)]
-enum Source {
-    Code(String),
-    Doc(String),
-}
-
-#[derive(Debug, PartialEq)]
-enum SourceType {
-    Code,
-    Doc,
-}
-
-fn to_source_elements(source_text: String) -> LinkedList<Source> {
+type Source = LinkedList<SourceHunk>;
+fn to_source_elements(source_text: String) -> Source {
     let doc_prefix = "##";
-    let mut source_lines: LinkedList<Source> = LinkedList::new();
+    let mut source_lines: Source = LinkedList::new();
 
     for source_line in source_text.lines() {
         if source_line.trim().starts_with(doc_prefix) {
-            source_lines.push_back(Source::Doc(
+            source_lines.push_back(SourceHunk::Doc(
                 source_line
                     .trim_start_matches(doc_prefix)
                     .trim()
-                    .to_string(),
+                    .to_owned(),
             ));
         } else {
-            source_lines.push_back(Source::Code(source_line.to_string()));
+            source_lines.push_back(SourceHunk::Code(source_line.to_owned()));
         }
     }
 
     source_lines
 }
 
-fn meld_neighbors(source_lines: LinkedList<Source>) -> LinkedList<Source> {
+fn meld_neighbors(source_lines: Source) -> Source {
     let mut part: String = "".to_owned();
-    let mut documentation: LinkedList<Source> = LinkedList::new();
+    let mut documentation: Source = LinkedList::new();
 
     let mut last_part_type = match source_lines.front() {
-        Some(Source::Code(_)) => SourceType::Code,
-        Some(Source::Doc(_)) => SourceType::Doc,
+        Some(SourceHunk::Code(_)) => HunkType::Code,
+        Some(SourceHunk::Doc(_)) => HunkType::Doc,
         _ => return documentation,
     };
 
     for line in source_lines.iter() {
         match line {
-            Source::Code(line_str) => {
-                if SourceType::Code == last_part_type {
+            SourceHunk::Code(line_str) => {
+                if HunkType::Code == last_part_type {
                     if !part.is_empty() {
                         part.push_str("\n");
                     }
                     part.push_str(line_str);
                 } else {
-                    documentation.push_back(Source::Doc(part));
+                    documentation.push_back(SourceHunk::Doc(part));
 
                     part = line_str.to_owned();
-                    last_part_type = SourceType::Code;
+                    last_part_type = HunkType::Code;
                 }
             }
-            Source::Doc(line_str) => {
-                if SourceType::Doc == last_part_type {
+            SourceHunk::Doc(line_str) => {
+                if HunkType::Doc == last_part_type {
                     if !part.is_empty() {
                         part.push_str("\n");
                     }
                     part.push_str(line_str);
                 } else {
-                    documentation.push_back(Source::Code(part));
+                    documentation.push_back(SourceHunk::Code(part));
 
                     part = line_str.to_owned();
-                    last_part_type = SourceType::Doc;
+                    last_part_type = HunkType::Doc;
                 }
             }
         }
     }
     match last_part_type {
-        SourceType::Code => documentation.push_back(Source::Code(part)),
-        SourceType::Doc => documentation.push_back(Source::Doc(part)),
+        HunkType::Code => documentation.push_back(SourceHunk::Code(part)),
+        HunkType::Doc => documentation.push_back(SourceHunk::Doc(part)),
     }
 
     documentation
+}
+
+#[derive(Debug, PartialEq)]
+enum SourceHunk {
+    Code(String),
+    Doc(String),
+}
+
+#[derive(Debug, PartialEq)]
+enum HunkType {
+    Code,
+    Doc,
+}
+
+#[derive(Debug, PartialEq)]
+struct DocEntry {
+    name: String,
+    content: String,
+}
+
+impl DocEntry {
+    fn parse_from(text: &str) -> Result<DocEntry, StringStreamError> {
+        let mut entry = skip_count(1, token('@'))
+            .with(many1::<String, _, _>(letter()))
+            .skip(space())
+            .skip(space())
+            .and(many1::<String, _, _>(any()))
+            .map(|(name, content)| DocEntry {
+                name: name.to_owned(),
+                content: content.to_owned(),
+            });
+
+        entry.parse(text).map(|x| x.0)
+    }
+}
+
+#[derive(Debug)]
+enum Entry {
+    Code(String),
+    Doc(DocEntry),
+}
+
+impl Entry {
+    fn from(hunk: SourceHunk) -> Entry {
+        match hunk {
+            SourceHunk::Code(text) => Entry::Code(text),
+            SourceHunk::Doc(text) => Entry::Doc(
+                match DocEntry::parse_from(&text) {
+                    Ok(entry) => entry,
+                    Err(_) => panic!("Oops"),
+                }
+            ),
+        }
+    }
 }
 
 fn main() {
@@ -118,10 +164,22 @@ fn main() {
         opt.doc_comment_identifier
     );
 
-    println!("Source: {:?}", Source::Code("fn x() = || y;".to_string()));
-    println!("Source: {:?}", Source::Doc("@param x".to_string()));
+    println!(
+        "SourceHunk: {:?}",
+        SourceHunk::Code("fn x() = || y;".to_owned())
+    );
+    println!("SourceHunk: {:?}", SourceHunk::Doc("@param x".to_owned()));
     println!(
         "To-Source-Elements: {:?}",
-        to_source_elements("".to_string())
+        to_source_elements("".to_owned())
     );
+
+    println!("{:?}", DocEntry::parse_from("jakiś napis"));
+    println!(
+        "{:?}",
+        DocEntry::parse_from("@param  foo  I jakiś napis teraz")
+    );
+    println!("{:?}", DocEntry::parse_from("@using  I jakiś napis teraz"));
+
+    println!("{:?}", Entry::from(SourceHunk::Doc("@using  I jakiś napis teraz".to_owned())) );
 }
