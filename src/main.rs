@@ -1,6 +1,22 @@
 use combine::error::StringStreamError;
-use combine::parser::char::{letter, space};
-use combine::{any, many1, skip_count, token, Parser};
+use combine::parser::char::{
+    alpha_num,
+    char,
+    letter,
+    space,
+};
+use combine::{
+    any,
+    many,
+    many1,
+    none_of,
+    optional,
+    satisfy,
+    skip_count,
+    token,
+    Parser,
+    Stream,
+};
 use std::collections::LinkedList;
 use std::fs;
 use std::path::PathBuf;
@@ -24,6 +40,7 @@ struct Opt {
 }
 
 type Source = LinkedList<SourceHunk>;
+
 fn to_source_elements(source_text: String) -> Source {
     let doc_prefix = "##";
     let mut source_lines: Source = LinkedList::new();
@@ -104,14 +121,16 @@ enum HunkType {
     Doc,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct DocEntry {
     name: String,
     content: String,
 }
 
 impl DocEntry {
-    fn parse_from(text: &str) -> Result<DocEntry, StringStreamError> {
+    fn parse_from(text: &str) -> Result<LinkedList<DocEntry>, StringStreamError> {
+        let mut implicite_brief = many::<String, _ , _>(any::<&str>()).skip(char('@'));
+
         let mut entry = skip_count(1, token('@'))
             .with(many1::<String, _, _>(letter()))
             .skip(space())
@@ -122,14 +141,26 @@ impl DocEntry {
                 content: content.to_owned(),
             });
 
-        entry.parse(text).map(|x| x.0)
+        let mut entries = optional(implicite_brief).and(many(entry))
+            .map(
+                |(iml_brief_text, rest_entries): (Option<String>, LinkedList<DocEntry>)| {
+                    let mut res = rest_entries.clone();
+                    if let Some(brief_text) = iml_brief_text {
+                        res.push_front(DocEntry {name: "brief".to_owned(), content: brief_text});
+                    }
+
+                    res
+                }
+            );
+
+        entries.parse(text).map(|x| x.0)
     }
 }
 
 #[derive(Debug)]
 enum Entry {
     Code(String),
-    Doc(DocEntry),
+    Doc(LinkedList<DocEntry>),
 }
 
 impl Entry {
@@ -138,8 +169,8 @@ impl Entry {
             SourceHunk::Code(text) => Entry::Code(text),
             SourceHunk::Doc(text) => Entry::Doc(
                 match DocEntry::parse_from(&text) {
-                    Ok(entry) => entry,
-                    Err(_) => panic!("Oops"),
+                    Ok(entries) => entries,
+                    Err(error_text) => panic!("Oops {:?}", error_text),
                 }
             ),
         }
@@ -150,36 +181,12 @@ fn main() {
     let opt = Opt::from_args();
     println!("Hello, world! Opts: {:?}", opt);
     println!("File name: {}", opt.input.display());
-    let content = fs::read_to_string(opt.input).expect("Cannot load source file");
 
+    let content = fs::read_to_string(opt.input).expect("Cannot load source file");
     println!("I've got a file: \"\"\"\n{content}\"\"\"");
 
-    let lines_of_source = to_source_elements(content);
-    println!("\"Parsed\" source lines: {:?}\n", lines_of_source);
-    let parts_of_source = meld_neighbors(lines_of_source);
-    println!("\"Meld\" source parts: {:?}\n", parts_of_source);
-
-    println!(
-        "Documentation comment indentifier: \"{0}\"",
-        opt.doc_comment_identifier
-    );
-
-    println!(
-        "SourceHunk: {:?}",
-        SourceHunk::Code("fn x() = || y;".to_owned())
-    );
-    println!("SourceHunk: {:?}", SourceHunk::Doc("@param x".to_owned()));
-    println!(
-        "To-Source-Elements: {:?}",
-        to_source_elements("".to_owned())
-    );
-
-    println!("{:?}", DocEntry::parse_from("jakiś napis"));
-    println!(
-        "{:?}",
-        DocEntry::parse_from("@param  foo  I jakiś napis teraz")
-    );
-    println!("{:?}", DocEntry::parse_from("@using  I jakiś napis teraz"));
-
-    println!("{:?}", Entry::from(SourceHunk::Doc("@using  I jakiś napis teraz".to_owned())) );
+    let parts_of_source = meld_neighbors(to_source_elements(content));
+    for part in parts_of_source {
+        println!("-> {:?}", part);
+    }
 }
